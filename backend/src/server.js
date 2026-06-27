@@ -5,6 +5,8 @@ const cors = require("cors");
 
 const connectDB = require("./db");
 const taskRoutes = require("./routes/taskRoutes");
+const documentRoutes = require("./routes/documentRoutes")
+const taskSuggestionRoutes = require("./routes/taskSuggestionRoutes")
 const { startReminderJob } = require("./jobs/reminderJob");
 
 const app = express();
@@ -20,6 +22,8 @@ app.get("/health", (req, res) => {
 });
 
 app.use("/api/tasks", taskRoutes);
+app.use("/api/documents", documentRoutes);
+app.use("/api/task-suggestion", taskSuggestionRoutes);
 
 connectDB().then(() => {
   startReminderJob();
