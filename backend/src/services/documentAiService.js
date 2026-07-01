@@ -118,6 +118,12 @@ Rules:
 - Only suggest tasks that are actually supported by the document.
 - Do not invent due dates.
 - If the deadline date is unclear, use dueDate: null.
+- Always provide a useful summary, even if no task or deadline is found.
+- If the document contains an assignment, project instruction, checklist, submission requirement, or homework instruction, suggest a task even when there is no deadline.
+- If no deadline is found, set dueDate to null and make it clear through importantDates: [].
+- If the document is only lecture notes, reading material, slides, or reference material, do not suggest a task unless there is an explicit assignment or action required.
+- If the document looks useful for studying but has no explicit task, add a questionForSensei asking whether they want to create a study task.
+- Never treat "no deadline found" as an error.
 - If the document looks like homework/assignment, category should be "homework".
 - If no task is found, return suggestedTasks: [].
 - Keep summary concise.
