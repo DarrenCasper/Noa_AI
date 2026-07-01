@@ -128,10 +128,10 @@ Rules:
 - If no task is found, return suggestedTasks: [].
 - Keep summary concise.
 - Use Asia/Jakarta timezone when interpreting dates if possible.
-- If suggestedTasks is not empty, questionsForSensei should ask whether Sensei wants to add the suggested task or tasks.
-- If there are multiple suggested tasks, questionsForSensei should ask whether to add all, add a specific number, or ignore them.
-- Do not suggest converting the result into JSON or another format.
-- The next action should focus on saving, ignoring, or reviewing task suggestions.
+- If suggestedTasks has one item, questionsForSensei must include exactly one question asking whether Sensei wants to add that task to the task list.
+- If suggestedTasks has more than one item, questionsForSensei must ask whether Sensei wants to add all tasks, add only a specific number, or ignore them.
+- Do not ask whether Sensei wants a cleaner summary, academic summary, JSON output, or another formatting conversion.
+- The next action must be about saving, ignoring, or reviewing task suggestions.
 
 Document name:
 ${document.originalName}
