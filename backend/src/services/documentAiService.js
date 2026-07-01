@@ -128,6 +128,10 @@ Rules:
 - If no task is found, return suggestedTasks: [].
 - Keep summary concise.
 - Use Asia/Jakarta timezone when interpreting dates if possible.
+- If suggestedTasks is not empty, questionsForSensei should ask whether Sensei wants to add the suggested task or tasks.
+- If there are multiple suggested tasks, questionsForSensei should ask whether to add all, add a specific number, or ignore them.
+- Do not suggest converting the result into JSON or another format.
+- The next action should focus on saving, ignoring, or reviewing task suggestions.
 
 Document name:
 ${document.originalName}
