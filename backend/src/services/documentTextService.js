@@ -2,6 +2,7 @@ const fs = require("fs/promises");
 const path = require("path");
 const pdfParse = require("pdf-parse");
 const mammoth = require("mammoth");
+const { extractTextFromImage } = require("./imageTextService");
 
 function normalizeText(text) {
   if (!text) return "";
@@ -21,14 +22,43 @@ function getTextPreview(text, maxLength = 800) {
   return `${text.slice(0, maxLength).trim()}...`;
 }
 
+function getExtensionFromMimeType(mimeType) {
+  const map = {
+    "application/pdf": ".pdf",
+    "text/plain": ".txt",
+    "text/markdown": ".md",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+      ".docx",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+  };
+
+  return map[mimeType] || "";
+}
+
 function getFileExtension(file) {
   const originalName = file.originalname || "";
   const filePath = file.path || "";
+  const mimeType = file.mimetype || "";
 
   const fromOriginalName = path.extname(originalName).toLowerCase();
   if (fromOriginalName) return fromOriginalName;
 
-  return path.extname(filePath).toLowerCase();
+  const fromPath = path.extname(filePath).toLowerCase();
+  if (fromPath) return fromPath;
+
+  return getExtensionFromMimeType(mimeType);
+}
+
+function isImageFile(file) {
+  const extension = getFileExtension(file);
+  const mimeType = file.mimetype || "";
+
+  return (
+    [".jpg", ".jpeg", ".png", ".webp"].includes(extension) ||
+    mimeType.startsWith("image/")
+  );
 }
 
 async function extractTextFromTxtLike(file) {
@@ -53,6 +83,10 @@ async function extractTextFromDocument(file) {
   const extension = getFileExtension(file);
   const mimeType = file.mimetype || "";
 
+  if (isImageFile(file)) {
+    return extractTextFromImage(file);
+  }
+
   if (
     extension === ".txt" ||
     extension === ".md" ||
@@ -74,7 +108,9 @@ async function extractTextFromDocument(file) {
     return extractTextFromDocx(file);
   }
 
-  throw new Error("Unsupported file type. Supported types: PDF, TXT, MD, DOCX.");
+  throw new Error(
+    "Unsupported file type. Supported types: PDF, TXT, MD, DOCX, JPG, JPEG, PNG, WEBP."
+  );
 }
 
 module.exports = {
@@ -82,4 +118,5 @@ module.exports = {
   getTextPreview,
   getFileExtension,
   normalizeText,
+  isImageFile,
 };
