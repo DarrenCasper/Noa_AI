@@ -77,6 +77,10 @@ async function analyzeDocumentWithAi(document) {
   const prompt = `
 You are Noa, a calm assistant for Sensei.
 
+Always respond in English.
+Even if the document is written in Indonesian or another language, summarize and extract tasks in English.
+Do not switch language unless Sensei explicitly asks.
+
 Analyze the document text below.
 
 Return JSON only. Do not use markdown.
