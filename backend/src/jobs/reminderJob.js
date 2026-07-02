@@ -566,7 +566,7 @@ async function sendGroupedDeadlinePreparationReminders() {
   }
 
   for (const offset of [7, 5, 3, 1]) {
-    const tasks = sortByPriority(grouped[offset] || now).slice(0, 8);
+    const tasks = sortByPriority(grouped[offset]).slice(0, 8);
     const type = getDeadlineTypeFromOffset(offset);
 
     if (!type || tasks.length === 0) continue;

@@ -27,6 +27,19 @@ app.use("/api/documents", documentRoutes);
 app.use("/api/task-suggestion", taskSuggestionRoutes);
 app.use("/api/pending-actions", pendingActionRoutes);
 
+app.use((req, res) => {
+  res.status(404).json({ message: "Route not found." });
+});
+
+app.use((error, req, res, next) => {
+  console.error("Unhandled error:", error);
+
+  res.status(error.status || 500).json({
+    message: "Unexpected server error.",
+    error: error.message,
+  });
+});
+
 connectDB().then(() => {
   startReminderJob();
 

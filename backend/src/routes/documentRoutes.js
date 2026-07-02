@@ -159,7 +159,29 @@ function formatSuggestionForResponse(savedSuggestion, similarItems) {
   };
 }
 
-router.post("/upload", upload.single("document"), async (req, res) => {
+function handleUpload(req, res, next) {
+  upload.single("document")(req, res, (error) => {
+    if (!error) return next();
+
+    if (error instanceof multer.MulterError) {
+      const message =
+        error.code === "LIMIT_UNEXPECTED_FILE"
+          ? "Unexpected upload field. Use form field name: document."
+          : error.code === "LIMIT_FILE_SIZE"
+          ? "File is too large. Max size is 15MB."
+          : "File upload error.";
+
+      return res.status(400).json({ message, error: error.message });
+    }
+
+    return res.status(400).json({
+      message: "Document upload failed.",
+      error: error.message,
+    });
+  });
+}
+
+router.post("/upload", handleUpload, async (req, res) => {
   let savedDocument = null;
 
   try {
