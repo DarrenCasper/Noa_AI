@@ -7,7 +7,7 @@ const pendingActionSchema = new mongoose.Schema(
     type: {
       type: String,
       required: true,
-      enum: ["document_suggestion_confirmation"],
+      enum: ["document_suggestion_confirmation", "study_task_confirmation"],
       index: true,
     },
 
@@ -56,6 +56,7 @@ const pendingActionSchema = new mongoose.Schema(
 );
 
 pendingActionSchema.index({ userId: 1, type: 1, status: 1, createdAt: -1 });
+pendingActionSchema.index({ userId: 1, status: 1, createdAt: -1 });
 pendingActionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 module.exports = mongoose.model("PendingAction", pendingActionSchema);

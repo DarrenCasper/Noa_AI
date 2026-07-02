@@ -27,23 +27,25 @@ function formatPendingAction(pendingAction) {
   };
 }
 
-async function cancelActivePendingActions(userId, type) {
-  await PendingAction.updateMany(
-    {
-      userId,
-      type,
-      status: "active",
-    },
-    {
-      $set: {
-        status: "cancelled",
-        resolvedAt: new Date(),
-        resolution: {
-          reason: "Replaced by a newer pending action.",
-        },
+async function cancelActivePendingActions(userId, type = null) {
+  const query = {
+    userId,
+    status: "active",
+  };
+
+  if (type) {
+    query.type = type;
+  }
+
+  await PendingAction.updateMany(query, {
+    $set: {
+      status: "cancelled",
+      resolvedAt: new Date(),
+      resolution: {
+        reason: "Replaced by a newer pending action.",
       },
-    }
-  );
+    },
+  });
 }
 
 async function createDocumentSuggestionPendingAction({
@@ -52,9 +54,7 @@ async function createDocumentSuggestionPendingAction({
   suggestions,
   ttlMinutes = getPendingActionTtlMinutes(),
 }) {
-  const type = "document_suggestion_confirmation";
-
-  await cancelActivePendingActions(userId, type);
+  await cancelActivePendingActions(userId);
 
   const suggestionIds = suggestions.map((suggestion) => suggestion._id);
 
@@ -70,7 +70,7 @@ async function createDocumentSuggestionPendingAction({
 
   return PendingAction.create({
     userId,
-    type,
+    type: "document_suggestion_confirmation",
     status: "active",
     title: "Document task suggestion confirmation",
     message:
@@ -84,27 +84,69 @@ async function createDocumentSuggestionPendingAction({
   });
 }
 
+async function createStudyTaskPendingAction({
+  userId,
+  documentId,
+  studyTask,
+  analysis,
+  ttlMinutes = getPendingActionTtlMinutes(),
+}) {
+  await cancelActivePendingActions(userId);
+
+  return PendingAction.create({
+    userId,
+    type: "study_task_confirmation",
+    status: "active",
+    title: "Study task confirmation",
+    message:
+      "Sensei has a pending study task suggestion from the latest document/image analysis.",
+    documentId,
+    suggestionIds: [],
+    payload: {
+      studyTask,
+      analysis: {
+        summary: analysis?.summary || "",
+        documentType: analysis?.documentType || "",
+        importantDates: analysis?.importantDates || [],
+      },
+    },
+    expiresAt: addMinutes(new Date(), ttlMinutes),
+  });
+}
+
 async function getCurrentPendingAction({
   userId,
-  type = "document_suggestion_confirmation",
+  type = null,
+  populateSuggestions = true,
 }) {
-  return PendingAction.findOne({
+  const query = {
     userId,
-    type,
     status: "active",
     expiresAt: { $gt: new Date() },
-  })
-    .sort({ createdAt: -1 })
-    .populate({
+  };
+
+  if (type) {
+    query.type = type;
+  }
+
+  let pendingActionQuery = PendingAction.findOne(query).sort({ createdAt: -1 });
+
+  if (populateSuggestions) {
+    pendingActionQuery = pendingActionQuery.populate({
       path: "suggestionIds",
       populate: {
         path: "similarTaskIds",
       },
     });
+  }
+
+  return pendingActionQuery;
 }
 
 module.exports = {
   createDocumentSuggestionPendingAction,
+  createStudyTaskPendingAction,
   getCurrentPendingAction,
   formatPendingAction,
+  cancelActivePendingActions,
 };

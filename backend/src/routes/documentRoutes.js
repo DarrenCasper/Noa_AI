@@ -15,8 +15,14 @@ const {
 
 const {
   createDocumentSuggestionPendingAction,
+  createStudyTaskPendingAction,
   formatPendingAction,
-} = require("../services/pendingActionService")
+} = require("../services/pendingActionService");
+
+const {
+  isLikelyStudyMaterial,
+  buildStudyTaskPayload,
+} = require("../services/studyTaskService");
 
 const { analyzeDocumentWithAi } = require("../services/documentAiService");
 const { findSimilarTasks } = require("../services/taskSimilarityService");
@@ -168,8 +174,8 @@ function handleUpload(req, res, next) {
         error.code === "LIMIT_UNEXPECTED_FILE"
           ? "Unexpected upload field. Use form field name: document."
           : error.code === "LIMIT_FILE_SIZE"
-          ? "File is too large. Max size is 15MB."
-          : "File upload error.";
+            ? "File is too large. Max size is 15MB."
+            : "File upload error.";
 
       return res.status(400).json({ message, error: error.message });
     }
@@ -331,13 +337,23 @@ router.post("/:id/analyze", async (req, res) => {
     }
 
     let pendingAction = null;
+    let studyTask = null;
 
     if (savedSuggestionDocs.length > 0) {
       pendingAction = await createDocumentSuggestionPendingAction({
         userId: document.userId,
         documentId: document._id,
         suggestions: savedSuggestionDocs,
-      })
+      });
+    } else if (isLikelyStudyMaterial(document, analysis)) {
+      studyTask = buildStudyTaskPayload(document, analysis);
+
+      pendingAction = await createStudyTaskPendingAction({
+        userId: document.userId,
+        documentId: document._id,
+        studyTask,
+        analysis,
+      });
     }
 
     return res.json({
@@ -351,6 +367,7 @@ router.post("/:id/analyze", async (req, res) => {
       },
       suggestions: savedSuggestions,
       pendingAction: pendingAction ? formatPendingAction(pendingAction) : null,
+      studyTask,
     });
   } catch (error) {
     console.error("Document analysis failed:", error);

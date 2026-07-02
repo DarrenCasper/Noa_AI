@@ -17,11 +17,15 @@ function getUserId(req) {
 function normalizeAction(value) {
   const action = String(value || "").toLowerCase().trim();
 
-  if (["accept", "add", "create", "save"].includes(action)) {
+  if (["accept", "add", "create", "save", "yes", "confirm"].includes(action)) {
     return "accept";
   }
 
-  if (["reject", "ignore", "skip", "dismiss", "cancel"].includes(action)) {
+  if (
+    ["reject", "ignore", "skip", "dismiss", "cancel", "no", "decline"].includes(
+      action
+    )
+  ) {
     return "reject";
   }
 
@@ -30,7 +34,7 @@ function normalizeAction(value) {
 
 function normalizeSelection(selection, count) {
   if (count <= 0) {
-    throw new Error("There are no suggestions to select.");
+    return [];
   }
 
   if (selection === undefined || selection === null || selection === "") {
@@ -122,7 +126,20 @@ function formatSuggestion(suggestion, number = null) {
   };
 }
 
-async function markPendingActionResolvedIfDone(pendingAction) {
+async function markPendingActionResolved(pendingAction, resolution = {}) {
+  pendingAction.status = "resolved";
+  pendingAction.resolvedAt = new Date();
+  pendingAction.resolution = {
+    reason: "Pending action resolved.",
+    ...resolution,
+  };
+
+  await pendingAction.save();
+
+  return pendingAction;
+}
+
+async function markDocumentPendingActionResolvedIfDone(pendingAction) {
   const refreshed = await PendingAction.findById(pendingAction._id).populate(
     "suggestionIds"
   );
@@ -134,12 +151,9 @@ async function markPendingActionResolvedIfDone(pendingAction) {
   );
 
   if (!stillPending) {
-    refreshed.status = "resolved";
-    refreshed.resolvedAt = new Date();
-    refreshed.resolution = {
-      reason: "All selected suggestions have been handled.",
-    };
-    await refreshed.save();
+    return markPendingActionResolved(refreshed, {
+      reason: "All suggestions have been handled.",
+    });
   }
 
   return refreshed;
@@ -167,11 +181,39 @@ async function createTaskFromSuggestion(suggestion) {
   return task;
 }
 
+async function createStudyTaskFromPendingAction(pendingAction) {
+  const studyTask = pendingAction.payload?.studyTask;
+
+  if (!studyTask || !studyTask.title) {
+    throw new Error("Pending study task payload is missing or invalid.");
+  }
+
+  const task = await Task.create({
+    userId: pendingAction.userId,
+    title: studyTask.title,
+    description: studyTask.description || "",
+    subject: studyTask.subject || "",
+    category: studyTask.category || "homework",
+    priority: studyTask.priority || "normal",
+    complexity: studyTask.complexity || "unknown",
+    tags: Array.isArray(studyTask.tags) ? studyTask.tags : ["study"],
+    dueDate: studyTask.dueDate || null,
+    source: studyTask.source || "document_ai_study",
+    reminderEnabled: true,
+  });
+
+  await markPendingActionResolved(pendingAction, {
+    reason: "Study task created.",
+    createdTaskId: task._id,
+  });
+
+  return task;
+}
+
 router.get("/current", async (req, res) => {
   try {
     const userId = getUserId(req);
-    const type =
-      req.query.type || req.body?.type || "document_suggestion_confirmation";
+    const type = req.query.type || null;
 
     const pendingAction = await getCurrentPendingAction({ userId, type });
 
@@ -189,6 +231,10 @@ router.get("/current", async (req, res) => {
       suggestions: suggestions.map((suggestion, index) =>
         formatSuggestion(suggestion, index + 1)
       ),
+      studyTask:
+        pendingAction.type === "study_task_confirmation"
+          ? pendingAction.payload?.studyTask || null
+          : null,
     });
   } catch (error) {
     return res.status(500).json({
@@ -201,7 +247,7 @@ router.get("/current", async (req, res) => {
 router.post("/current/resolve", async (req, res) => {
   try {
     const userId = getUserId(req);
-    const type = req.body.type || "document_suggestion_confirmation";
+    const type = req.body.type || null;
     const action = normalizeAction(req.body.action);
     const force = req.body.force === true;
     const reason = req.body.reason || "";
@@ -209,7 +255,7 @@ router.post("/current/resolve", async (req, res) => {
     if (!action) {
       return res.status(400).json({
         message:
-          "Invalid action. Use action: accept/add/save or reject/ignore/skip.",
+          "Invalid action. Use action: accept/add/save/yes or reject/ignore/skip/no.",
       });
     }
 
@@ -221,19 +267,54 @@ router.post("/current/resolve", async (req, res) => {
       });
     }
 
+    if (pendingAction.type === "study_task_confirmation") {
+      if (action === "reject") {
+        const resolvedPendingAction = await markPendingActionResolved(
+          pendingAction,
+          {
+            reason: reason || "Study task rejected by Sensei.",
+          }
+        );
+
+        return res.json({
+          message: "Study task suggestion rejected.",
+          pendingAction: formatPendingAction(resolvedPendingAction),
+        });
+      }
+
+      const createdTask = await createStudyTaskFromPendingAction(pendingAction);
+
+      return res.status(201).json({
+        message: "Study task created.",
+        createdTasks: [
+          {
+            number: 1,
+            task: formatTask(createdTask),
+          },
+        ],
+        pendingAction: formatPendingAction(pendingAction),
+      });
+    }
+
+    if (pendingAction.type !== "document_suggestion_confirmation") {
+      return res.status(400).json({
+        message: `Unsupported pending action type: ${pendingAction.type}`,
+      });
+    }
+
     const suggestions = pendingAction.suggestionIds || [];
 
     if (suggestions.length === 0) {
-      pendingAction.status = "resolved";
-      pendingAction.resolvedAt = new Date();
-      pendingAction.resolution = {
-        reason: "Pending action had no suggestions.",
-      };
-      await pendingAction.save();
+      const resolvedPendingAction = await markPendingActionResolved(
+        pendingAction,
+        {
+          reason: "Pending action had no suggestions.",
+        }
+      );
 
       return res.status(410).json({
         message: "This pending action has no suggestions left.",
-        pendingAction: formatPendingAction(pendingAction),
+        pendingAction: formatPendingAction(resolvedPendingAction),
       });
     }
 
@@ -256,7 +337,7 @@ router.post("/current/resolve", async (req, res) => {
     );
 
     if (activeSelections.length === 0) {
-      await markPendingActionResolvedIfDone(pendingAction);
+      await markDocumentPendingActionResolvedIfDone(pendingAction);
 
       return res.status(409).json({
         message: "Selected suggestions are already handled.",
@@ -294,7 +375,7 @@ router.post("/current/resolve", async (req, res) => {
         });
       }
 
-      const refreshedPendingAction = await markPendingActionResolvedIfDone(
+      const refreshedPendingAction = await markDocumentPendingActionResolvedIfDone(
         pendingAction
       );
 
@@ -319,7 +400,7 @@ router.post("/current/resolve", async (req, res) => {
         rejectedSuggestions.push(formatSuggestion(item.suggestion, item.number));
       }
 
-      const refreshedPendingAction = await markPendingActionResolvedIfDone(
+      const refreshedPendingAction = await markDocumentPendingActionResolvedIfDone(
         pendingAction
       );
 
