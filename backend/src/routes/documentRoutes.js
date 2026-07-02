@@ -13,6 +13,11 @@ const {
   getFileExtension,
 } = require("../services/documentTextService");
 
+const {
+  createDocumentSuggestionPendingAction,
+  formatPendingAction,
+} = require("../services/pendingActionService")
+
 const { analyzeDocumentWithAi } = require("../services/documentAiService");
 const { findSimilarTasks } = require("../services/taskSimilarityService");
 
@@ -275,6 +280,7 @@ router.post("/:id/analyze", async (req, res) => {
     }).sort({ createdAt: -1 });
 
     const savedSuggestions = [];
+    const savedSuggestionDocs = [];
 
     for (const suggestedTask of analysis.suggestedTasks) {
       const similarItems = findSimilarTasks(suggestedTask, existingTasks);
@@ -296,9 +302,20 @@ router.post("/:id/analyze", async (req, res) => {
         status: "pending",
       });
 
+      savedSuggestionDocs.push(savedSuggestion);
       savedSuggestions.push(
         formatSuggestionForResponse(savedSuggestion, similarItems)
       );
+    }
+
+    let pendingAction = null;
+
+    if (savedSuggestionDocs.length > 0) {
+      pendingAction = await createDocumentSuggestionPendingAction({
+        userId: document.userId,
+        documentId: document._id,
+        suggestions: savedSuggestionDocs,
+      })
     }
 
     return res.json({
@@ -311,6 +328,7 @@ router.post("/:id/analyze", async (req, res) => {
         questionsForSensei: analysis.questionsForSensei,
       },
       suggestions: savedSuggestions,
+      pendingAction: pendingAction ? formatPendingAction(pendingAction) : null,
     });
   } catch (error) {
     console.error("Document analysis failed:", error);
