@@ -13,24 +13,11 @@ function sendWhatsAppMessage(message) {
       return reject(new Error("Message is empty"));
     }
 
-    const command = `
-      & $env:OPENCLAW_BIN message send `
-      + `--channel whatsapp `
-      + `--target $env:WHATSAPP_TARGET `
-      + `--message $env:NOA_MESSAGE
-    `;
-
     execFile(
-      "powershell.exe",
-      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+      openclawBin,
+      ["message", "send", "--channel", "whatsapp", "--target", target, "--message", message],
       {
         windowsHide: true,
-        env: {
-          ...process.env,
-          OPENCLAW_BIN: openclawBin,
-          WHATSAPP_TARGET: target,
-          NOA_MESSAGE: message,
-        },
       },
       (error, stdout, stderr) => {
         const output = `${stdout || ""}\n${stderr || ""}`.trim();

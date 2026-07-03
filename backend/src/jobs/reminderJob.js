@@ -270,7 +270,7 @@ async function saveReminderLog({
       },
       {
         upsert: true,
-        new: true,
+        returnDocument: "after",
         setDefaultsOnInsert: true,
       }
     );
