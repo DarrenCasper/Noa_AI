@@ -447,6 +447,7 @@ router.post("/:id/ask", async (req, res) => {
       confidence: result.confidence,
       referencedSections: result.referencedSections,
       suggestedFollowUps: result.suggestedFollowUps,
+      closingQuestion: result.closingQuestion,
       usedSections: result.usedSections,
     });
   } catch (error) {

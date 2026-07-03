@@ -28,6 +28,10 @@ function safeJsonParse(text) {
   }
 }
 
+function escapeRegex(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function getQuestionKeywords(question) {
   const stopwords = new Set([
     "the",
@@ -63,6 +67,7 @@ function getQuestionKeywords(question) {
     "image",
     "file",
     "screenshot",
+    "photo",
     "explain",
     "jelaskan",
     "apa",
@@ -87,7 +92,6 @@ function getQuestionKeywords(question) {
 
 function chunkText(text, chunkSize = 3500, overlap = 400) {
   const clean = normalizeText(text);
-
   if (!clean) return [];
 
   const chunks = [];
@@ -107,7 +111,6 @@ function chunkText(text, chunkSize = 3500, overlap = 400) {
     }
 
     if (end >= clean.length) break;
-
     start = Math.max(0, end - overlap);
   }
 
@@ -120,9 +123,8 @@ function scoreChunk(chunk, keywords) {
   const lower = chunk.text.toLowerCase();
 
   return keywords.reduce((score, keyword) => {
-    const regex = new RegExp(`\\b${keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g");
+    const regex = new RegExp(`\\b${escapeRegex(keyword)}\\b`, "g");
     const matches = lower.match(regex);
-
     return score + (matches ? matches.length : 0);
   }, 0);
 }
@@ -155,14 +157,146 @@ function selectRelevantChunks(text, question, maxChunks = 4) {
 
 function buildContext(chunks) {
   return chunks
-    .map((chunk) => {
-      return `Section ${chunk.index}:\n${chunk.text}`;
-    })
+    .map((chunk) => `Section ${chunk.index}:\n${chunk.text}`)
     .join("\n\n---\n\n");
 }
 
-function fallbackAnswer(rawText) {
-  const clean = normalizeText(rawText);
+function removeGenericClosing(answer) {
+  const text = normalizeText(answer);
+  if (!text) return "";
+
+  const forbiddenPatterns = [
+    /\bif\s+you\s+want\b/i,
+    /\bif\s+you(?:'|’)d\s+like\b/i,
+    /\bif\s+you\s+would\s+like\b/i,
+    /\blet\s+me\s+know\b/i,
+    /\bi\s+can\s+also\b/i,
+    /\bi\s+can\s+help\s+further\b/i,
+    /\bi\s+can\s+help\s+you\s+further\b/i,
+    /\bfeel\s+free\s+to\s+ask\b/i,
+  ];
+
+  const sentences = text
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+
+  const filtered = sentences.filter((sentence) => {
+    return !forbiddenPatterns.some((pattern) => pattern.test(sentence));
+  });
+
+  return filtered.join(" ").trim();
+}
+
+function getDefaultSuggestedFollowUps(question, answer = "") {
+  const q = normalizeText(question).toLowerCase();
+  const a = normalizeText(answer).toLowerCase();
+
+  if (
+    q.includes("question") ||
+    q.includes("questions") ||
+    q.includes("soal") ||
+    a.includes("question") ||
+    a.includes("questions")
+  ) {
+    return ["Answer the questions one by one", "Make a short cheat sheet"];
+  }
+
+  if (
+    q.includes("study") ||
+    q.includes("belajar") ||
+    q.includes("important") ||
+    q.includes("points") ||
+    q.includes("materi")
+  ) {
+    return ["Make a short cheat sheet", "Turn this into a study checklist"];
+  }
+
+  if (q.includes("checklist")) {
+    return ["Create a study task from this checklist", "Find deadlines"];
+  }
+
+  if (
+    q.includes("requirement") ||
+    q.includes("requirements") ||
+    q.includes("assignment")
+  ) {
+    return ["Make an assignment checklist", "Find deadlines"];
+  }
+
+  return ["Make a short cheat sheet", "Answer the questions one by one"];
+}
+
+function buildDefaultClosingQuestion(question, suggestedFollowUps = [], answer = "") {
+  const q = normalizeText(question).toLowerCase();
+  const joinedFollowUps = suggestedFollowUps.join(" ").toLowerCase();
+  const a = normalizeText(answer).toLowerCase();
+
+  if (
+    q.includes("question") ||
+    q.includes("questions") ||
+    q.includes("soal") ||
+    joinedFollowUps.includes("question") ||
+    a.includes("question") ||
+    a.includes("questions")
+  ) {
+    return "Would you like me to answer the questions one by one, Sensei?";
+  }
+
+  if (
+    q.includes("checklist") ||
+    joinedFollowUps.includes("checklist") ||
+    a.includes("checklist")
+  ) {
+    return "Would you like me to turn this into a study checklist, Sensei?";
+  }
+
+  if (
+    q.includes("cheat sheet") ||
+    joinedFollowUps.includes("cheat sheet") ||
+    q.includes("study") ||
+    q.includes("belajar") ||
+    q.includes("important points")
+  ) {
+    return "Would you like me to make this into a short cheat sheet, Sensei?";
+  }
+
+  if (
+    q.includes("deadline") ||
+    q.includes("due") ||
+    joinedFollowUps.includes("deadline")
+  ) {
+    return "Would you like me to check this file for deadlines, Sensei?";
+  }
+
+  return "Would you like me to continue with the next useful step, Sensei?";
+}
+
+function normalizeClosingQuestion(value, question, suggestedFollowUps = [], answer = "") {
+  const text = normalizeText(value);
+
+  const forbiddenPattern =
+    /\bif\s+you\s+want\b|\bif\s+you(?:'|’)d\s+like\b|\bif\s+you\s+would\s+like\b|\blet\s+me\s+know\b|\bi\s+can\s+also\b|\bi\s+can\s+help\s+further\b/i;
+
+  if (!text || forbiddenPattern.test(text)) {
+    return buildDefaultClosingQuestion(question, suggestedFollowUps, answer);
+  }
+
+  if (!text.toLowerCase().startsWith("would you like me to")) {
+    return buildDefaultClosingQuestion(question, suggestedFollowUps, answer);
+  }
+
+  if (!text.toLowerCase().includes("sensei")) {
+    return `${text.replace(/[?.!]*$/, "")}, Sensei?`;
+  }
+
+  return text.replace(/[!.]*$/, "?");
+}
+
+function fallbackAnswer(rawText, question = "") {
+  const clean = removeGenericClosing(rawText);
+
+  const suggestedFollowUps = getDefaultSuggestedFollowUps(question, clean);
 
   return {
     answer:
@@ -170,20 +304,18 @@ function fallbackAnswer(rawText) {
       "Sensei, I tried to answer from the document, but I could not produce a clear response.",
     confidence: "low",
     referencedSections: [],
-    suggestedFollowUps: [
-      "Summarize this document",
-      "Find the important points",
-      "Make a checklist",
-    ],
+    suggestedFollowUps,
+    closingQuestion: buildDefaultClosingQuestion(question, suggestedFollowUps, clean),
   };
 }
 
-function normalizeQaResult(parsed, rawText) {
+function normalizeQaResult(parsed, rawText, question = "") {
   if (!parsed || typeof parsed !== "object") {
-    return fallbackAnswer(rawText);
+    return fallbackAnswer(rawText, question);
   }
 
-  const answer = normalizeText(parsed.answer);
+  const answer = removeGenericClosing(parsed.answer);
+
   const confidence = ["low", "medium", "high"].includes(
     String(parsed.confidence || "").toLowerCase()
   )
@@ -202,7 +334,19 @@ function normalizeQaResult(parsed, rawText) {
         .map((item) => normalizeText(item))
         .filter(Boolean)
         .slice(0, 4)
-    : [];
+    : getDefaultSuggestedFollowUps(question, answer);
+
+  const finalSuggestedFollowUps =
+    suggestedFollowUps.length > 0
+      ? suggestedFollowUps
+      : getDefaultSuggestedFollowUps(question, answer);
+
+  const closingQuestion = normalizeClosingQuestion(
+    parsed.closingQuestion,
+    question,
+    finalSuggestedFollowUps,
+    answer
+  );
 
   return {
     answer:
@@ -210,14 +354,8 @@ function normalizeQaResult(parsed, rawText) {
       "Sensei, I found the document, but I could not produce a clear answer from its content.",
     confidence,
     referencedSections,
-    suggestedFollowUps:
-      suggestedFollowUps.length > 0
-        ? suggestedFollowUps
-        : [
-            "Summarize this document",
-            "Find the important points",
-            "Make a checklist",
-          ],
+    suggestedFollowUps: finalSuggestedFollowUps,
+    closingQuestion,
   };
 }
 
@@ -258,6 +396,16 @@ If the question asks what to study, explain the important study points.
 If the question asks for an explanation, make it easier to understand.
 Keep the tone calm, concise, and useful.
 
+Important response rules:
+- The "answer" field must only answer Sensei's question.
+- Do not include generic closing offers inside the "answer" field.
+- Avoid conditional offer phrasing such as "if" + "you want", "if" + "you would like", "let" + "me know", or "I can also".
+- Put the final next-action question only in "closingQuestion".
+- "closingQuestion" must start with "Would you like me to".
+- "closingQuestion" must end with "Sensei?"
+- If the document contains numbered questions, use a closingQuestion that asks whether Sensei wants you to answer them one by one.
+- If the document is study material, use a closingQuestion that asks whether Sensei wants a study checklist or short cheat sheet.
+
 Document name:
 ${document.originalName || "uploaded document"}
 
@@ -269,13 +417,14 @@ ${context}
 
 Return valid JSON only with this structure:
 {
-  "answer": "clear answer in English",
+  "answer": "clear answer in English with no generic closing offer",
   "confidence": "low | medium | high",
   "referencedSections": [1, 2],
   "suggestedFollowUps": [
-    "short follow-up question 1",
-    "short follow-up question 2"
-  ]
+    "Answer the questions one by one",
+    "Make a short cheat sheet"
+  ],
+  "closingQuestion": "Would you like me to answer the questions one by one, Sensei?"
 }
 `;
 
@@ -296,7 +445,9 @@ Return valid JSON only with this structure:
 
   const rawText = response.output_text || "";
   const parsed = safeJsonParse(rawText);
-  const result = normalizeQaResult(parsed, rawText);
+  const result = normalizeQaResult(parsed, rawText, cleanQuestion);
+
+  const keywords = getQuestionKeywords(cleanQuestion);
 
   return {
     ...result,
@@ -304,7 +455,7 @@ Return valid JSON only with this structure:
       section: chunk.index,
       start: chunk.start,
       end: chunk.end,
-      score: scoreChunk(chunk, getQuestionKeywords(cleanQuestion)),
+      score: scoreChunk(chunk, keywords),
     })),
   };
 }
