@@ -26,6 +26,7 @@ const {
 
 const { analyzeDocumentWithAi } = require("../services/documentAiService");
 const { findSimilarTasks } = require("../services/taskSimilarityService");
+const { askDocumentQuestion } = require("../services/documentQaService");
 
 const router = express.Router();
 
@@ -398,6 +399,61 @@ router.get("/:id", async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       message: "Failed to read document.",
+      error: error.message,
+    });
+  }
+});
+
+router.post("/:id/ask", async (req, res) => {
+  try {
+    const document = await Document.findById(req.params.id);
+
+    if (!document) {
+      return res.status(404).json({
+        message: "Document not found.",
+      });
+    }
+
+    if (document.status !== "processed") {
+      return res.status(400).json({
+        message: "Document is not processed yet.",
+        status: document.status,
+        extractionError: document.extractionError,
+      });
+    }
+
+    if (!document.extractedText || !document.extractedText.trim()) {
+      return res.status(400).json({
+        message:
+          "Document has no extracted text. It may be a scanned PDF, unclear image, or unsupported file.",
+      });
+    }
+
+    const question = req.body.question || req.body.q || "";
+
+    if (!question || !String(question).trim()) {
+      return res.status(400).json({
+        message: "Question is required.",
+      });
+    }
+
+    const result = await askDocumentQuestion(document, question);
+
+    return res.json({
+      message: "Document question answered.",
+      document: formatDocument(document),
+      question,
+      answer: result.answer,
+      confidence: result.confidence,
+      referencedSections: result.referencedSections,
+      suggestedFollowUps: result.suggestedFollowUps,
+      usedSections: result.usedSections,
+    });
+  } catch (error) {
+    console.error("Document Q&A failed:", error);
+
+    return res.status(500).json({
+      message: "Document Q&A failed.",
       error: error.message,
     });
   }
