@@ -82,7 +82,7 @@ function normalizeChecklistItems(items) {
   return items
     .map((item, index) => ({
       title: normalizeText(item.title).slice(0, 160),
-      description: normalizeText(item.description).slice(0, 400),
+      description: removeGenericClosing(item.description).slice(0, 400),
       order: Number(item.order || index + 1),
       status: "pending",
       source: "document_ai_checklist",
@@ -161,8 +161,8 @@ function normalizeChecklistResult(parsed, document) {
     `Complete ${document.originalName || "uploaded assignment"}`;
 
   const description =
-    normalizeText(mainTask.description) ||
-    normalizeText(parsed?.summary) ||
+    removeGenericClosing(mainTask.description) ||
+    removeGenericClosing(parsed?.summary) ||
     `Complete the assignment based on ${document.originalName || "the uploaded file"}.`;
 
   const result = {
@@ -271,8 +271,8 @@ CHECKLIST RULES:
 OUTPUT STYLE RULES:
 - Return valid JSON only.
 - Do not include Markdown outside JSON.
-- Do not include generic closing phrases.
-- Do not use "If you want", "I can also", or "Let me know".
+- Do not include generic closing phrases anywhere in the output, including inside "summary", "reason", "mainTask.description", or any "checklistItems[].description" — not only in the final field.
+- Do not use "If you want", "I can also", "Let me know", or similar offers such as "I can also turn this into a shorter checklist" or "I can also make a task-by-task outline" in any field.
 - Put the final confirmation question only in "nextActionQuestion".
 - "nextActionQuestion" must start with "Would you like me to".
 - "nextActionQuestion" must end with "Sensei?"

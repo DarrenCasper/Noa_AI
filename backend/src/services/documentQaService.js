@@ -331,7 +331,7 @@ function normalizeQaResult(parsed, rawText, question = "") {
 
   const suggestedFollowUps = Array.isArray(parsed.suggestedFollowUps)
     ? parsed.suggestedFollowUps
-        .map((item) => normalizeText(item))
+        .map((item) => removeGenericClosing(item))
         .filter(Boolean)
         .slice(0, 4)
     : getDefaultSuggestedFollowUps(question, answer);
