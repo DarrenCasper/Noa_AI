@@ -22,6 +22,11 @@ app.get("/health", (req, res) => {
   });
 });
 
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+  next();
+});
+
 app.use("/api/tasks", taskRoutes);
 app.use("/api/documents", documentRoutes);
 app.use("/api/task-suggestion", taskSuggestionRoutes);
