@@ -290,7 +290,7 @@ function normalizeClosingQuestion(value, question, suggestedFollowUps = [], answ
     return `${text.replace(/[?.!]*$/, "")}, Sensei?`;
   }
 
-  return text.replace(/[!.]*$/, "?");
+  return text.replace(/[?!.]*$/, "?");
 }
 
 function fallbackAnswer(rawText, question = "") {

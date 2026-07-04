@@ -147,7 +147,7 @@ function normalizeNextActionQuestion(value, result) {
     return `${text.replace(/[?.!]*$/, "")}, Sensei?`;
   }
 
-  return text.replace(/[!.]*$/, "?");
+  return text.replace(/[?!.]*$/, "?");
 }
 
 function normalizeChecklistResult(parsed, document) {
