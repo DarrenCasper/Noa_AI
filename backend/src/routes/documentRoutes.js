@@ -16,6 +16,7 @@ const {
 const {
   createDocumentSuggestionPendingAction,
   createStudyTaskPendingAction,
+  createChecklistPendingAction,
   formatPendingAction,
 } = require("../services/pendingActionService");
 
@@ -27,6 +28,7 @@ const {
 const { analyzeDocumentWithAi } = require("../services/documentAiService");
 const { findSimilarTasks } = require("../services/taskSimilarityService");
 const { askDocumentQuestion } = require("../services/documentQaService");
+const { generateAssignmentChecklist } = require("../services/assignmentChecklistService")
 
 const router = express.Router();
 
@@ -375,6 +377,80 @@ router.post("/:id/analyze", async (req, res) => {
 
     return res.status(500).json({
       message: "Document analysis failed.",
+      error: error.message,
+    });
+  }
+});
+
+router.post("/:id/checklist", async (req, res) => {
+  try {
+    const document = await Document.findById(req.params.id);
+
+    if (!document) {
+      return res.status(404).json({
+        message: "Document not found.",
+      });
+    }
+
+    if (document.status !== "processed") {
+      return res.status(400).json({
+        message: "Document is not processed yet.",
+        status: document.status,
+        extractionError: document.extractionError,
+      });
+    }
+
+    if (!document.extractedText || !document.extractedText.trim()) {
+      return res.status(400).json({
+        message:
+          "Document has no extracted text. It may be a scanned PDF, unclear image, or unsupported file.",
+      });
+    }
+
+    const userId = req.body.userId || req.query.userId || document.userId || "main-whatsapp";
+    const targetTaskId = req.body.targetTaskId || req.body.taskId || null;
+    const force = req.body.force === true;
+
+    const checklistResult = await generateAssignmentChecklist(document);
+
+    if (!checklistResult.isActionableAssignment && !force) {
+      return res.json({
+        message: "No actionable assignment checklist was created.",
+        document: formatDocument(document),
+        summary: checklistResult.summary,
+        reason: checklistResult.reason,
+        isActionableAssignment: checklistResult.isActionableAssignment,
+        checklistItems: [],
+        pendingAction: null,
+        nextActionQuestion: checklistResult.nextActionQuestion,
+      });
+    }
+
+    const pendingAction = await createChecklistPendingAction({
+      userId,
+      documentId: document._id,
+      mainTask: checklistResult.mainTask,
+      checklistItems: checklistResult.checklistItems,
+      targetTaskId,
+      summary: checklistResult.summary,
+    });
+
+    return res.json({
+      message: "Assignment checklist generated.",
+      document: formatDocument(document),
+      summary: checklistResult.summary,
+      reason: checklistResult.reason,
+      isActionableAssignment: checklistResult.isActionableAssignment,
+      mainTask: checklistResult.mainTask,
+      checklistItems: checklistResult.checklistItems,
+      pendingAction: formatPendingAction(pendingAction),
+      nextActionQuestion: checklistResult.nextActionQuestion,
+    });
+  } catch (error) {
+    console.error("Assignment checklist generation failed:", error);
+
+    return res.status(500).json({
+      message: "Assignment checklist generation failed.",
       error: error.message,
     });
   }

@@ -143,10 +143,41 @@ async function getCurrentPendingAction({
   return pendingActionQuery;
 }
 
+async function createChecklistPendingAction({
+  userId,
+  documentId,
+  mainTask,
+  checklistItems,
+  targetTaskId = null,
+  summary = "",
+  ttlMinutes = getPendingActionTtlMinutes(),
+}) {
+  await cancelActivePendingActions(userId);
+
+  return PendingAction.create({
+    userId,
+    type: "checklist_confirmation",
+    status: "active",
+    title: "Assignment checklist confirmation",
+    message:
+      "Sensei has a pending assignment checklist generated from the latest document/image.",
+    documentId,
+    suggestionIds: [],
+    payload: {
+      targetTaskId,
+      mainTask,
+      checklistItems,
+      summary,
+    },
+    expiresAt: addMinutes(new Date(), ttlMinutes),
+  });
+}
+
 module.exports = {
   createDocumentSuggestionPendingAction,
   createStudyTaskPendingAction,
   getCurrentPendingAction,
   formatPendingAction,
   cancelActivePendingActions,
+  createChecklistPendingAction,
 };

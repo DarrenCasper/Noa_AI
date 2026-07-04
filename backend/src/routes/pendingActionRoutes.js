@@ -116,12 +116,12 @@ function formatSuggestion(suggestion, number = null) {
     status: suggestion.status,
     similarTasks: Array.isArray(suggestion.similarTaskIds)
       ? suggestion.similarTaskIds.map((task) => ({
-          id: task._id,
-          title: task.title,
-          description: task.description,
-          dueDate: task.dueDate,
-          status: task.status,
-        }))
+        id: task._id,
+        title: task.title,
+        description: task.description,
+        dueDate: task.dueDate,
+        status: task.status,
+      }))
       : [],
   };
 }
@@ -210,6 +210,98 @@ async function createStudyTaskFromPendingAction(pendingAction) {
   return task;
 }
 
+function normalizeChecklistForTask(items) {
+  if (!Array.isArray(items)) return [];
+
+  return items
+    .map((item, index) => ({
+      title: String(item.title || "").trim(),
+      description: String(item.description || "").trim(),
+      status: "pending",
+      order: Number(item.order || index + 1),
+      source: "document_ai_checklist",
+      completedAt: null,
+    }))
+    .filter((item) => item.title)
+    .map((item, index) => ({
+      ...item,
+      order: index + 1,
+    }));
+}
+
+async function createOrAttachChecklistFromPendingAction(pendingAction) {
+  const payload = pendingAction.payload || {};
+  const mainTask = payload.mainTask || {};
+  const checklistItems = normalizeChecklistForTask(payload.checklistItems || []);
+
+  if (!checklistItems.length) {
+    throw new Error("Checklist payload has no valid checklist items.");
+  }
+
+  if (payload.targetTaskId) {
+    const task = await Task.findOne({
+      _id: payload.targetTaskId,
+      userId: pendingAction.userId,
+    });
+
+    if (!task) {
+      throw new Error("Target task for checklist was not found.");
+    }
+
+    const existingTitles = new Set(
+      (task.checklistItems || []).map((item) =>
+        String(item.title || "").toLowerCase().trim()
+      )
+    );
+
+    const newItems = checklistItems.filter(
+      (item) => !existingTitles.has(item.title.toLowerCase().trim())
+    );
+
+    task.checklistItems.push(...newItems);
+    await task.save();
+
+    await markPendingActionResolved(pendingAction, {
+      reason: "Checklist attached to existing task.",
+      updatedTaskId: task._id,
+      addedChecklistCount: newItems.length,
+    });
+
+    return {
+      mode: "attached",
+      task,
+      addedChecklistCount: newItems.length,
+    };
+  }
+
+  const task = await Task.create({
+    userId: pendingAction.userId,
+    title: mainTask.title || "Complete assignment",
+    description: mainTask.description || "",
+    subject: mainTask.subject || "",
+    category: mainTask.category || "homework",
+    priority: mainTask.priority || "normal",
+    complexity: mainTask.complexity || "medium",
+    tags: Array.isArray(mainTask.tags) ? mainTask.tags : [],
+    dueDate: mainTask.dueDate || null,
+    source: mainTask.source || "document_ai_checklist",
+    reminderEnabled: true,
+    checklistItems,
+  });
+
+  await markPendingActionResolved(pendingAction, {
+    reason: "Task with checklist created.",
+    createdTaskId: task._id,
+    checklistCount: checklistItems.length,
+  });
+
+  return {
+    mode: "created",
+    task,
+    addedChecklistCount: checklistItems.length,
+  };
+}
+
 router.get("/current", async (req, res) => {
   try {
     const userId = getUserId(req);
@@ -234,6 +326,15 @@ router.get("/current", async (req, res) => {
       studyTask:
         pendingAction.type === "study_task_confirmation"
           ? pendingAction.payload?.studyTask || null
+          : null,
+      checklist:
+        pendingAction.type === "checklist_confirmation"
+          ? {
+            mainTask: pendingAction.payload?.mainTask || null,
+            checklistItems: pendingAction.payload?.checklistItems || [],
+            targetTaskId: pendingAction.payload?.targetTaskId || null,
+            summary: pendingAction.payload?.summary || "",
+          }
           : null,
     });
   } catch (error) {
@@ -292,6 +393,35 @@ router.post("/current/resolve", async (req, res) => {
             task: formatTask(createdTask),
           },
         ],
+        pendingAction: formatPendingAction(pendingAction),
+      });
+    }
+
+    if (pendingAction.type === "checklist_confirmation") {
+      if (action === "reject") {
+        const resolvedPendingAction = await markPendingActionResolved(
+          pendingAction,
+          {
+            reason: reason || "Checklist rejected by Sensei.",
+          }
+        );
+
+        return res.json({
+          message: "Checklist suggestion rejected.",
+          pendingAction: formatPendingAction(resolvedPendingAction),
+        });
+      }
+
+      const result = await createOrAttachChecklistFromPendingAction(pendingAction);
+
+      return res.status(201).json({
+        message:
+          result.mode === "attached"
+            ? "Checklist attached to existing task."
+            : "Task with checklist created.",
+        mode: result.mode,
+        task: formatTask(result.task),
+        addedChecklistCount: result.addedChecklistCount,
         pendingAction: formatPendingAction(pendingAction),
       });
     }

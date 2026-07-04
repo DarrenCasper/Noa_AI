@@ -344,8 +344,8 @@ router.post("/", async (req, res) => {
       reminderAt: reminderAt
         ? new Date(reminderAt)
         : dueDate
-        ? new Date(dueDate)
-        : null,
+          ? new Date(dueDate)
+          : null,
     });
 
     res.status(201).json({
@@ -489,8 +489,8 @@ router.get("/today", async (req, res) => {
         mode === "today_plan_completed"
           ? "All today's selected tasks are done. Ask: continue today or stop for now?"
           : mode === "needs_selection"
-          ? "Ask Sensei which suggested task they want to do today."
-          : "Continue helping Sensei finish the active today tasks.",
+            ? "Ask Sensei which suggested task they want to do today."
+            : "Continue helping Sensei finish the active today tasks.",
     });
   } catch (error) {
     res.status(500).json({
@@ -842,6 +842,241 @@ router.delete("/:id", async (req, res) => {
   } catch (error) {
     res.status(500).json({
       message: "Failed to delete task",
+      error: error.message,
+    });
+  }
+});
+
+function formatChecklistItem(item) {
+  return {
+    id: item._id,
+    title: item.title,
+    description: item.description,
+    status: item.status,
+    order: item.order,
+    source: item.source,
+    completedAt: item.completedAt,
+  };
+}
+
+router.get("/:id/checklist", async (req, res) => {
+  try {
+    const userId = req.query.userId || "main-whatsapp";
+
+    const task = await Task.findOne({
+      _id: req.params.id,
+      userId,
+    });
+
+    if (!task) {
+      return res.status(404).json({
+        message: "Task not found.",
+      });
+    }
+
+    const checklistItems = [...(task.checklistItems || [])].sort(
+      (a, b) => Number(a.order || 0) - Number(b.order || 0)
+    );
+
+    return res.json({
+      message: "Checklist loaded.",
+      task: {
+        id: task._id,
+        title: task.title,
+        status: task.status,
+      },
+      checklistItems: checklistItems.map(formatChecklistItem),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Failed to load checklist.",
+      error: error.message,
+    });
+  }
+});
+
+router.post("/:id/checklist", async (req, res) => {
+  try {
+    const userId = req.body.userId || "main-whatsapp";
+
+    const task = await Task.findOne({
+      _id: req.params.id,
+      userId,
+    });
+
+    if (!task) {
+      return res.status(404).json({
+        message: "Task not found.",
+      });
+    }
+
+    const title = String(req.body.title || "").trim();
+
+    if (!title) {
+      return res.status(400).json({
+        message: "Checklist item title is required.",
+      });
+    }
+
+    const nextOrder =
+      (task.checklistItems || []).reduce((max, item) => {
+        return Math.max(max, Number(item.order || 0));
+      }, 0) + 1;
+
+    task.checklistItems.push({
+      title,
+      description: String(req.body.description || "").trim(),
+      status: "pending",
+      order: req.body.order ? Number(req.body.order) : nextOrder,
+      source: "manual",
+      completedAt: null,
+    });
+
+    await task.save();
+
+    const newItem = task.checklistItems[task.checklistItems.length - 1];
+
+    return res.status(201).json({
+      message: "Checklist item added.",
+      task: {
+        id: task._id,
+        title: task.title,
+      },
+      checklistItem: formatChecklistItem(newItem),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Failed to add checklist item.",
+      error: error.message,
+    });
+  }
+});
+
+router.patch("/:id/checklist/:itemId/done", async (req, res) => {
+  try {
+    const userId = req.body.userId || req.query.userId || "main-whatsapp";
+
+    const task = await Task.findOne({
+      _id: req.params.id,
+      userId,
+    });
+
+    if (!task) {
+      return res.status(404).json({
+        message: "Task not found.",
+      });
+    }
+
+    const item = task.checklistItems.id(req.params.itemId);
+
+    if (!item) {
+      return res.status(404).json({
+        message: "Checklist item not found.",
+      });
+    }
+
+    item.status = "done";
+    item.completedAt = new Date();
+
+    await task.save();
+
+    return res.json({
+      message: "Checklist item marked as done.",
+      task: {
+        id: task._id,
+        title: task.title,
+      },
+      checklistItem: formatChecklistItem(item),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Failed to mark checklist item as done.",
+      error: error.message,
+    });
+  }
+});
+
+router.patch("/:id/checklist/:itemId/undone", async (req, res) => {
+  try {
+    const userId = req.body.userId || req.query.userId || "main-whatsapp";
+
+    const task = await Task.findOne({
+      _id: req.params.id,
+      userId,
+    });
+
+    if (!task) {
+      return res.status(404).json({
+        message: "Task not found.",
+      });
+    }
+
+    const item = task.checklistItems.id(req.params.itemId);
+
+    if (!item) {
+      return res.status(404).json({
+        message: "Checklist item not found.",
+      });
+    }
+
+    item.status = "pending";
+    item.completedAt = null;
+
+    await task.save();
+
+    return res.json({
+      message: "Checklist item marked as pending.",
+      task: {
+        id: task._id,
+        title: task.title,
+      },
+      checklistItem: formatChecklistItem(item),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Failed to mark checklist item as pending.",
+      error: error.message,
+    });
+  }
+});
+
+router.delete("/:id/checklist/:itemId", async (req, res) => {
+  try {
+    const userId = req.body.userId || req.query.userId || "main-whatsapp";
+
+    const task = await Task.findOne({
+      _id: req.params.id,
+      userId,
+    });
+
+    if (!task) {
+      return res.status(404).json({
+        message: "Task not found.",
+      });
+    }
+
+    const item = task.checklistItems.id(req.params.itemId);
+
+    if (!item) {
+      return res.status(404).json({
+        message: "Checklist item not found.",
+      });
+    }
+
+    item.deleteOne();
+
+    await task.save();
+
+    return res.json({
+      message: "Checklist item deleted.",
+      task: {
+        id: task._id,
+        title: task.title,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Failed to delete checklist item.",
       error: error.message,
     });
   }

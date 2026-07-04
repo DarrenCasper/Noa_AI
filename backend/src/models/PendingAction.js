@@ -7,7 +7,7 @@ const pendingActionSchema = new mongoose.Schema(
     type: {
       type: String,
       required: true,
-      enum: ["document_suggestion_confirmation", "study_task_confirmation"],
+      enum: ["document_suggestion_confirmation", "study_task_confirmation", "checklist_confirmation"],
       index: true,
     },
 

@@ -1,6 +1,46 @@
 const mongoose = require("mongoose");
 const crypto = require("crypto");
 
+const checklistItemSchema = new mongoose.Schema(
+  {
+    title: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    description: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    status: {
+      type: String,
+      enum: ["pending", "done"],
+      default: "pending",
+      index: true,
+    },
+
+    order: {
+      type: Number,
+      default: 0,
+    },
+
+    source: {
+      type: String,
+      enum: ["manual", "document_ai", "document_ai_checklist"],
+      default: "document_ai_checklist",
+    },
+
+    completedAt: {
+      type: Date,
+      default: null,
+    },
+  },
+  { timestamps: true }
+);
+
 const taskSchema = new mongoose.Schema(
   {
     userId: {
@@ -48,6 +88,11 @@ const taskSchema = new mongoose.Schema(
       type: String,
       enum: ["homework", "coding", "appointment", "general"],
       default: "general",
+    },
+
+    checklistItems: {
+      type: [checklistItemSchema],
+      default: [],
     },
 
     priority: {
