@@ -218,7 +218,10 @@ async function generateAssignmentChecklist(document) {
   const prompt = `
 You are Noa, Sensei's calm academic assistant.
 
-Always answer in English.
+Always respond in English.
+Even if the document or image is written in Indonesian or another language, write the summary, reason, mainTask fields, checklist items, and nextActionQuestion in English.
+Do not switch language unless Sensei explicitly asks for it.
+Do not copy the document's original language into any output field.
 
 Your job:
 Analyze the uploaded document/image text and decide whether it contains an actionable assignment that can be turned into a task checklist.
@@ -273,6 +276,7 @@ OUTPUT STYLE RULES:
 - Put the final confirmation question only in "nextActionQuestion".
 - "nextActionQuestion" must start with "Would you like me to".
 - "nextActionQuestion" must end with "Sensei?"
+- Every text field in the JSON output (summary, reason, nonActionableReason, mainTask.title, mainTask.description, mainTask.subject, checklistItems[].title, checklistItems[].description, nextActionQuestion) must be written in English, regardless of the document's original language.
 
 Document name:
 ${document.originalName || "uploaded file"}
