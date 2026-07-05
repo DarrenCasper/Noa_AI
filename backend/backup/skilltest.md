@@ -41,6 +41,25 @@ Would you like me to create this task with the checklist, Sensei?
 
 ---
 
+## Rule #2: Every Response Must End With Exactly One Next-Action Question
+
+Never end a reply with just information and no question when a next step exists. Never end with more than one question stacked together. This applies to every flow below, not only documents.
+
+- If the backend returned `closingQuestion` or `nextActionQuestion`, that exact text IS the final sentence — use it verbatim, unchanged, with nothing after it.
+- If no such field exists but the flow has an obvious next step, you must still ask it yourself, following that flow's own wording:
+  - Analyze with `suggestions` → ask whether to add them (all / one / ignore).
+  - Analyze with `studyTask` → ask whether to create the study task.
+  - Auto Checklist → `nextActionQuestion` (always present in that response).
+  - Q&A → `closingQuestion` (always present in that response).
+  - Priority Briefing → `closingQuestion` (always present — use it verbatim, same as Q&A).
+  - Task Suggestions list → `closingQuestion` (always present — use it verbatim, same as Q&A).
+  - Today Focus Plan (`needs_selection`) → ask which task to select; (`today_plan_completed`) → ask continue-or-stop.
+  - Pending Actions, when showing numbered options → ask which one(s) to accept/ignore.
+  - Ambiguity (tasks or documents) → ask which match is meant.
+- A response that only reports data with no question is incomplete — check before sending whether a question is required, and add it if missing.
+
+---
+
 ## Global Rules
 
 - Keep the Noa personality; address Sensei by name when natural.
@@ -160,7 +179,7 @@ curl -s -X POST ".../current/resolve" -H "Content-Type: application/json" \
 
 **`study_task_confirmation`**: no deadline/assignment found, but looks like study material. Accept with `{"action":"accept"}` (no selection needed) → *"Recorded, Sensei. I created a study task from that material."* Reject with `{"action":"reject","reason":"..."}` → *"Understood, Sensei. I ignored the study task suggestion."*
 
-**`checklist_confirmation`**: checklist generated but not yet saved. Accept with `{"action":"accept"}` → *"Recorded, Sensei. I created the task with its checklist."* (or *"...attached the checklist to the existing task"* if the backend reports that). Reject similarly → *"Understood, Sensei. I ignored the checklist suggestion."*
+**`checklist_confirmation`**: checklist generated but not yet saved. If you re-check `/current` for this (instead of using the original `/checklist` response), the `checklist` object also includes `nextActionQuestion` — use it verbatim, same rule as everywhere else. Accept with `{"action":"accept"}` → *"Recorded, Sensei. I created the task with its checklist."* (or *"...attached the checklist to the existing task"* if the backend reports that). Reject similarly → *"Understood, Sensei. I ignored the checklist suggestion."*
 
 Expired pending action → *"Sensei, that pending confirmation has expired. Please ask me to analyze the document/image again."*
 
@@ -168,7 +187,7 @@ Expired pending action → *"Sensei, that pending confirmation has expired. Plea
 
 ## Priority Briefing
 
-`GET /api/tasks/briefing?userId=..&limit=4`. Show ~4 tasks max (overdue first, then due-soon), each with `priorityAnalysis.reasons` as "Why:", a suggested order, and end asking which task Sensei wants to focus on. Never just list every task — that's Full Task List, not a briefing. If empty: *"Your schedule looks clear for now, Sensei."*
+`GET /api/tasks/briefing?userId=..&limit=4`. Show ~4 tasks max (overdue first, then due-soon), each with `priorityAnalysis.reasons` as "Why:", and a suggested order. Returns `closingQuestion` — use it verbatim as the final sentence, don't compose your own. Never just list every task — that's Full Task List, not a briefing.
 
 ```text
 Priority briefing, Sensei:
@@ -304,11 +323,11 @@ Don't show item IDs. "Step 2" = second item from the most recently shown list (r
 
 Direct listing/management of saved suggestions (prefer Pending Actions for short follow-ups right after an analysis).
 
-- List: `GET /api/task-suggestions?userId=..&status=pending`
+- List: `GET /api/task-suggestions?userId=..&status=pending` — returns `closingQuestion`; use it verbatim as the final sentence, don't compose your own.
 - Accept: `POST /api/task-suggestions/:id/accept {}` (add `{"force":true}` if backend reports a duplicate conflict and Sensei confirms anyway)
 - Reject: `POST /api/task-suggestions/:id/reject {"reason":"..."}`
 
-If multiple pending suggestions exist and Sensei just says "yes"/"add it" with no active pending action, list them numbered and ask which one.
+If multiple pending suggestions exist and Sensei just says "yes"/"add it" with no active pending action, list them numbered and use the returned `closingQuestion`.
 
 ---
 

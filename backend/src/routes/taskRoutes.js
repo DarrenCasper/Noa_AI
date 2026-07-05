@@ -302,6 +302,12 @@ function buildPriorityBriefing(tasks, limit = 4) {
       priorityTasks.length > 0
         ? "Choose one of the priorityTasks as today's focus."
         : "No urgent task found. You can rest or pick an unscheduled task.",
+    closingQuestion:
+      priorityTasks.length > 1
+        ? "Which one would you like to focus on first, Sensei?"
+        : priorityTasks.length === 1
+        ? "Would you like me to place this into today's focus, Sensei?"
+        : "Your schedule looks clear for now, Sensei. Let's use it wisely.",
   };
 }
 

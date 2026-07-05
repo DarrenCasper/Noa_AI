@@ -150,6 +150,7 @@ async function createChecklistPendingAction({
   checklistItems,
   targetTaskId = null,
   summary = "",
+  nextActionQuestion = "",
   ttlMinutes = getPendingActionTtlMinutes(),
 }) {
   await cancelActivePendingActions(userId);
@@ -168,6 +169,7 @@ async function createChecklistPendingAction({
       mainTask,
       checklistItems,
       summary,
+      nextActionQuestion,
     },
     expiresAt: addMinutes(new Date(), ttlMinutes),
   });

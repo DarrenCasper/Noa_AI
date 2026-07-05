@@ -433,6 +433,7 @@ router.post("/:id/checklist", async (req, res) => {
       checklistItems: checklistResult.checklistItems,
       targetTaskId,
       summary: checklistResult.summary,
+      nextActionQuestion: checklistResult.nextActionQuestion,
     });
 
     return res.json({

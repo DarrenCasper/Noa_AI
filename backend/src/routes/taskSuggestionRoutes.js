@@ -63,6 +63,12 @@ router.get("/", async (req, res) => {
     return res.json({
       count: suggestions.length,
       suggestions: suggestions.map(formatSuggestion),
+      closingQuestion:
+        suggestions.length > 1
+          ? "Which one should I add, Sensei?"
+          : suggestions.length === 1
+          ? "Would you like me to add this suggestion as a real task, Sensei?"
+          : "Sensei, there are no pending document/image suggestions right now.",
     });
   } catch (error) {
     return res.status(500).json({

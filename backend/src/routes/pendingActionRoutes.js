@@ -334,6 +334,7 @@ router.get("/current", async (req, res) => {
             checklistItems: pendingAction.payload?.checklistItems || [],
             targetTaskId: pendingAction.payload?.targetTaskId || null,
             summary: pendingAction.payload?.summary || "",
+            nextActionQuestion: pendingAction.payload?.nextActionQuestion || "",
           }
           : null,
     });
