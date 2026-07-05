@@ -23,7 +23,9 @@ function parseHourList(value, fallback) {
 }
 
 const MORNING_BRIEFING_HOUR = Number(process.env.MORNING_BRIEFING_HOUR || 7);
-const MORNING_BRIEFING_MINUTE = Number(process.env.MORNING_BRIEFING_MINUTE || 0);
+const MORNING_BRIEFING_MINUTE = Number(
+  process.env.MORNING_BRIEFING_MINUTE || 0
+);
 
 const DEADLINE_PREP_HOUR = Number(process.env.DEADLINE_PREP_HOUR || 9);
 const DEADLINE_PREP_MINUTE = Number(process.env.DEADLINE_PREP_MINUTE || 0);
@@ -72,6 +74,82 @@ function getDetailsText(task) {
   return "not filled yet";
 }
 
+function getChecklistProgress(task) {
+  const items = Array.isArray(task.checklistItems) ? task.checklistItems : [];
+
+  const total = items.length;
+  const done = items.filter((item) => item.status === "done").length;
+
+  const pending = items
+    .filter((item) => item.status !== "done")
+    .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+
+  const percentage = total === 0 ? null : Math.round((done / total) * 100);
+
+  return {
+    total,
+    done,
+    pending,
+    percentage,
+    hasChecklist: total > 0,
+    isComplete: total > 0 && done === total,
+  };
+}
+
+function formatChecklistProgressLine(task) {
+  const progress = getChecklistProgress(task);
+
+  if (!progress.hasChecklist) return "";
+
+  return `Checklist: ${progress.done}/${progress.total} done (${progress.percentage}%)`;
+}
+
+function formatNextChecklistItems(task, limit = 3) {
+  const progress = getChecklistProgress(task);
+
+  if (!progress.hasChecklist || progress.pending.length === 0) {
+    return "";
+  }
+
+  const lines = progress.pending.slice(0, limit).map((item, index) => {
+    return `${index + 1}. ${item.title}`;
+  });
+
+  return `Next checklist items:\n${lines.join("\n")}`;
+}
+
+function getChecklistRisk(task) {
+  const progress = getChecklistProgress(task);
+
+  if (!progress.hasChecklist) return "none";
+  if (progress.isComplete) return "complete";
+  if (progress.percentage <= 30) return "high";
+  if (progress.percentage <= 70) return "medium";
+
+  return "low";
+}
+
+function getChecklistRiskScore(task) {
+  const risk = getChecklistRisk(task);
+
+  if (risk === "high") return 25;
+  if (risk === "medium") return 15;
+  if (risk === "low") return 5;
+
+  return 0;
+}
+
+function buildChecklistReminderBlock(task, options = {}) {
+  const { includeNextItems = true, nextItemLimit = 3 } = options;
+
+  const progressLine = formatChecklistProgressLine(task);
+  const nextItems = includeNextItems
+    ? formatNextChecklistItems(task, nextItemLimit)
+    : "";
+
+  return [progressLine, nextItems].filter(Boolean).join("\n");
+}
+
 function getMissingFields(task) {
   const missing = [];
 
@@ -98,21 +176,18 @@ function shouldRemindMissingDetails(task, now = dayjs().tz(APP_TZ)) {
   if (task.status !== "active") return false;
 
   const missing = getMissingFields(task);
-
   if (missing.length === 0) return false;
 
-  // Avoid reminding immediately after a task is created.
   if (task.createdAt) {
     const ageMinutes = now.diff(dayjs(task.createdAt).tz(APP_TZ), "minute");
+
     if (ageMinutes < MISSING_DETAILS_GRACE_MINUTES) {
       return false;
     }
   }
 
-  // Strongest case: task is basically only a title.
   if (missing.length >= 2) return true;
 
-  // Also remind if due date or description is missing.
   return missing.includes("description") || missing.includes("due date");
 }
 
@@ -186,6 +261,25 @@ function calculatePriority(task, now = dayjs().tz(APP_TZ)) {
     reasons.push("coding task");
   }
 
+  const checklistProgress = getChecklistProgress(task);
+  const checklistRisk = getChecklistRisk(task);
+  const checklistScore = getChecklistRiskScore(task);
+
+  if (checklistProgress.hasChecklist) {
+    score += checklistScore;
+    reasons.push(
+      `checklist ${checklistProgress.done}/${checklistProgress.total} done`
+    );
+
+    if (checklistRisk === "high") {
+      reasons.push("many checklist items unfinished");
+    } else if (checklistRisk === "medium") {
+      reasons.push("checklist still needs progress");
+    } else if (checklistRisk === "complete") {
+      reasons.push("checklist complete");
+    }
+  }
+
   let label = "low";
 
   if (score >= 110) {
@@ -205,10 +299,12 @@ function calculatePriority(task, now = dayjs().tz(APP_TZ)) {
 
 function isPriorityProblem(task, now = dayjs().tz(APP_TZ)) {
   const priority = calculatePriority(task, now);
+  const checklistRisk = getChecklistRisk(task);
 
   if (priority.score >= 75) return true;
   if (task.priority === "urgent" || task.priority === "high") return true;
   if (task.complexity === "complex" && task.dueDate) return true;
+  if (checklistRisk === "high" && task.dueDate) return true;
 
   return false;
 }
@@ -349,11 +445,17 @@ function formatMorningBriefingMessage(tasks) {
 
   topTasks.forEach((task, index) => {
     const priority = calculatePriority(task);
-    const reasons = priority.reasons.slice(0, 3).join(", ");
+    const reasons = priority.reasons.slice(0, 4).join(", ");
+    const checklistLine = formatChecklistProgressLine(task);
 
     lines.push(`${index + 1}. ${task.title}`);
     lines.push(`   Due: ${getDueText(task)}`);
     lines.push(`   Details: ${getDetailsText(task)}`);
+
+    if (checklistLine) {
+      lines.push(`   ${checklistLine}`);
+    }
+
     lines.push(`   Why: ${reasons || "worth reviewing"}`);
     lines.push("");
   });
@@ -385,6 +487,11 @@ async function sendMorningBriefing() {
 }
 
 function formatDeadlineReminderMessage(task, type) {
+  const checklistBlock = buildChecklistReminderBlock(task, {
+    includeNextItems: true,
+    nextItemLimit: 3,
+  });
+
   if (type === "deadline_3h") {
     return [
       "Sensei, a deadline is approaching.",
@@ -392,9 +499,12 @@ function formatDeadlineReminderMessage(task, type) {
       `${task.title}`,
       `Due: ${getDueText(task)}`,
       `Details: ${getDetailsText(task)}`,
+      checklistBlock,
       "",
-      "There are about 3 hours left. Shall I place this into today’s focus?",
-    ].join("\n");
+      "There are about 3 hours left. I recommend continuing the next unfinished step first.",
+    ]
+      .filter((line) => line !== "")
+      .join("\n");
   }
 
   if (type === "deadline_1h") {
@@ -404,9 +514,12 @@ function formatDeadlineReminderMessage(task, type) {
       `${task.title}`,
       `Due: ${getDueText(task)}`,
       `Details: ${getDetailsText(task)}`,
+      checklistBlock,
       "",
       "There is about 1 hour left. I recommend handling this now.",
-    ].join("\n");
+    ]
+      .filter((line) => line !== "")
+      .join("\n");
   }
 
   return [
@@ -415,7 +528,10 @@ function formatDeadlineReminderMessage(task, type) {
     `${task.title}`,
     `Due: ${getDueText(task)}`,
     `Details: ${getDetailsText(task)}`,
-  ].join("\n");
+    checklistBlock,
+  ]
+    .filter((line) => line !== "")
+    .join("\n");
 }
 
 function getDeadlineReminderType(task, now) {
@@ -441,7 +557,6 @@ function getDeadlineReminderType(task, now) {
 
 async function sendDeadlineHourReminders() {
   const now = dayjs().tz(APP_TZ);
-
   const lookAheadEnd = now.add(3, "hour").add(5, "minute").toDate();
 
   const tasks = await Task.find({
@@ -456,7 +571,6 @@ async function sendDeadlineHourReminders() {
 
   for (const task of tasks) {
     const type = getDeadlineReminderType(task, now);
-
     if (!type) continue;
 
     const dateKey = getDueDateKey(task);
@@ -475,17 +589,22 @@ async function sendDeadlineHourReminders() {
 function getDayReminderOffsetsForTask(task) {
   const offsets = new Set();
 
-  // Normal tasks get 3-day and 1-day reminders.
   offsets.add(3);
   offsets.add(1);
 
-  // Important or complex tasks get earlier preparation reminders too.
+  const checklistRisk = getChecklistRisk(task);
+
   if (
     task.priority === "urgent" ||
     task.priority === "high" ||
-    task.complexity === "complex"
+    task.complexity === "complex" ||
+    checklistRisk === "high"
   ) {
     offsets.add(7);
+    offsets.add(5);
+  }
+
+  if (checklistRisk === "medium") {
     offsets.add(5);
   }
 
@@ -497,28 +616,41 @@ function getDeadlineTypeFromOffset(offset) {
   if (offset === 5) return "deadline_5d";
   if (offset === 3) return "deadline_3d";
   if (offset === 1) return "deadline_1d";
+
   return null;
 }
 
 function formatGroupedDeadlineMessage(tasks, offset) {
-  const label =
-    offset === 1
-      ? "tomorrow"
-      : `in about ${offset} days`;
+  const label = offset === 1 ? "tomorrow" : `in about ${offset} days`;
 
   const lines = [
-    `Sensei, I found ${tasks.length} deadline${tasks.length > 1 ? "s" : ""} coming ${label}.`,
+    `Sensei, I found ${tasks.length} deadline${
+      tasks.length > 1 ? "s" : ""
+    } coming ${label}.`,
     "",
   ];
 
   tasks.forEach((task, index) => {
     const priority = calculatePriority(task);
-    const reasons = priority.reasons.slice(0, 2).join(", ");
+    const reasons = priority.reasons.slice(0, 3).join(", ");
+    const checklistLine = formatChecklistProgressLine(task);
+    const nextItems = formatNextChecklistItems(task, 2);
 
     lines.push(`${index + 1}. ${task.title}`);
     lines.push(`   Due: ${getDueText(task)}`);
     lines.push(`   Details: ${getDetailsText(task)}`);
+
+    if (checklistLine) {
+      lines.push(`   ${checklistLine}`);
+    }
+
     lines.push(`   Why: ${reasons || "upcoming deadline"}`);
+
+    if (nextItems && index === 0) {
+      lines.push("");
+      lines.push(nextItems);
+    }
+
     lines.push("");
   });
 
@@ -557,7 +689,6 @@ async function sendGroupedDeadlinePreparationReminders() {
   for (const task of activeTasks) {
     const due = dayjs(task.dueDate).tz(APP_TZ);
     const daysUntilDue = due.startOf("day").diff(now.startOf("day"), "day");
-
     const allowedOffsets = getDayReminderOffsetsForTask(task);
 
     if (allowedOffsets.has(daysUntilDue)) {
@@ -583,23 +714,24 @@ async function sendGroupedDeadlinePreparationReminders() {
 }
 
 function formatMissingDetailsMessage(tasks) {
-  const lines = [
-    "Sensei, a few tasks still need more details.",
-    "",
-  ];
+  const lines = ["Sensei, a few tasks still need more details.", ""];
 
   tasks.forEach((task, index) => {
     const missing = getMissingFields(task).join(", ");
+    const checklistLine = formatChecklistProgressLine(task);
 
     lines.push(`${index + 1}. ${task.title}`);
     lines.push(`   Missing: ${missing}`);
     lines.push(`   Due: ${getDueText(task)}`);
+
+    if (checklistLine) {
+      lines.push(`   ${checklistLine}`);
+    }
+
     lines.push("");
   });
 
-  lines.push(
-    "Would you like to fill one of these in now, Sensei?"
-  );
+  lines.push("Would you like to fill one of these in now, Sensei?");
 
   return lines.join("\n");
 }
@@ -641,8 +773,12 @@ function formatPriorityAttentionMessage(tasks) {
 
   tasks.forEach((task, index) => {
     const priority = calculatePriority(task);
-    const reasons = priority.reasons.slice(0, 3).join(", ");
+    const reasons = priority.reasons.slice(0, 4).join(", ");
     const missing = getMissingFields(task);
+    const checklistBlock = buildChecklistReminderBlock(task, {
+      includeNextItems: index === 0,
+      nextItemLimit: 3,
+    });
 
     lines.push(`${index + 1}. ${task.title}`);
     lines.push(`   Due: ${getDueText(task)}`);
@@ -653,12 +789,14 @@ function formatPriorityAttentionMessage(tasks) {
       lines.push(`   Missing: ${missing.join(", ")}`);
     }
 
+    if (checklistBlock) {
+      lines.push(checklistBlock);
+    }
+
     lines.push("");
   });
 
-  lines.push(
-    "I recommend choosing one of these for today’s focus, Sensei."
-  );
+  lines.push("I recommend choosing one of these for today’s focus, Sensei.");
 
   return lines.join("\n");
 }
@@ -701,9 +839,19 @@ function formatOverdueMessage(tasks, type) {
   ];
 
   tasks.forEach((task, index) => {
+    const checklistBlock = buildChecklistReminderBlock(task, {
+      includeNextItems: index === 0,
+      nextItemLimit: 3,
+    });
+
     lines.push(`${index + 1}. ${task.title}`);
     lines.push(`   Due: ${getDueText(task)}`);
     lines.push(`   Details: ${getDetailsText(task)}`);
+
+    if (checklistBlock) {
+      lines.push(checklistBlock);
+    }
+
     lines.push("");
   });
 
@@ -753,19 +901,23 @@ function shouldRunAtAnyHour(now, hours, minute) {
 
 function startReminderJob() {
   console.log("Reminder job started.");
+
   console.log(
     `Morning briefing time: ${MORNING_BRIEFING_HOUR}:${String(
       MORNING_BRIEFING_MINUTE
     ).padStart(2, "0")} ${APP_TZ}`
   );
+
   console.log(
     `Deadline prep reminder time: ${DEADLINE_PREP_HOUR}:${String(
       DEADLINE_PREP_MINUTE
     ).padStart(2, "0")} ${APP_TZ}`
   );
+
   console.log(`Missing details hours: ${MISSING_DETAILS_HOURS.join(", ")}`);
   console.log(`Priority check hours: ${PRIORITY_CHECK_HOURS.join(", ")}`);
   console.log("Urgent deadline reminders enabled: 3h and 1h before.");
+  console.log("Checklist-aware reminder intelligence enabled.");
 
   cron.schedule("* * * * *", async () => {
     try {
