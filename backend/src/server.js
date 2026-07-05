@@ -5,13 +5,17 @@ const cors = require("cors");
 
 const connectDB = require("./db");
 const taskRoutes = require("./routes/taskRoutes");
-const documentRoutes = require("./routes/documentRoutes")
-const taskSuggestionRoutes = require("./routes/taskSuggestionRoutes")
-const pendingActionRoutes = require("./routes/pendingActionRoutes")
+const documentRoutes = require("./routes/documentRoutes");
+const taskSuggestionRoutes = require("./routes/taskSuggestionRoutes");
+const pendingActionRoutes = require("./routes/pendingActionRoutes");
 const { startReminderJob } = require("./jobs/reminderJob");
 
 const app = express();
 const PORT = process.env.PORT || 5050;
+
+function isReminderJobEnabled() {
+  return String(process.env.ENABLE_REMINDER_JOB || "true").toLowerCase() === "true";
+}
 
 app.use(cors());
 app.use(express.json());
@@ -29,11 +33,19 @@ app.use((req, res, next) => {
 
 app.use("/api/tasks", taskRoutes);
 app.use("/api/documents", documentRoutes);
-app.use("/api/task-suggestion", taskSuggestionRoutes);
+
+// Preferred route
+app.use("/api/task-suggestions", taskSuggestionRoutes);
+
+// Legacy alias, keep this so older SKILL.md or tests do not break
+// app.use("/api/task-suggestion", taskSuggestionRoutes);
+
 app.use("/api/pending-actions", pendingActionRoutes);
 
 app.use((req, res) => {
-  res.status(404).json({ message: "Route not found." });
+  res.status(404).json({
+    message: "Route not found.",
+  });
 });
 
 app.use((error, req, res, next) => {
@@ -46,7 +58,11 @@ app.use((error, req, res, next) => {
 });
 
 connectDB().then(() => {
-  startReminderJob();
+  if (isReminderJobEnabled()) {
+    startReminderJob();
+  } else {
+    console.log("Reminder job disabled by ENABLE_REMINDER_JOB=false");
+  }
 
   app.listen(PORT, () => {
     console.log(`Noa backend running on http://localhost:${PORT}`);
