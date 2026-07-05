@@ -865,6 +865,30 @@ function formatChecklistItem(item) {
   };
 }
 
+function getChecklistProgress(task) {
+  const items = Array.isArray(task.checklistItems) ? task.checklistItems : [];
+  const total = items.length;
+  const done = items.filter((item) => item.status === "done").length;
+
+  return {
+    total,
+    done,
+    percentage: total === 0 ? null : Math.round((done / total) * 100),
+  };
+}
+
+function buildChecklistClosingQuestion(progress) {
+  if (progress.total === 0) {
+    return "Would you like me to add a checklist item to this task, Sensei?";
+  }
+
+  if (progress.done === progress.total) {
+    return "All checklist items are done, Sensei. Would you like me to mark the whole task as completed?";
+  }
+
+  return "Which item would you like to work on next, Sensei?";
+}
+
 router.get("/:id/checklist", async (req, res) => {
   try {
     const userId = req.query.userId || "main-whatsapp";
@@ -884,6 +908,8 @@ router.get("/:id/checklist", async (req, res) => {
       (a, b) => Number(a.order || 0) - Number(b.order || 0)
     );
 
+    const progress = getChecklistProgress(task);
+
     return res.json({
       message: "Checklist loaded.",
       task: {
@@ -892,6 +918,8 @@ router.get("/:id/checklist", async (req, res) => {
         status: task.status,
       },
       checklistItems: checklistItems.map(formatChecklistItem),
+      progress,
+      closingQuestion: buildChecklistClosingQuestion(progress),
     });
   } catch (error) {
     return res.status(500).json({
@@ -986,6 +1014,8 @@ router.patch("/:id/checklist/:itemId/done", async (req, res) => {
 
     await task.save();
 
+    const progress = getChecklistProgress(task);
+
     return res.json({
       message: "Checklist item marked as done.",
       task: {
@@ -993,6 +1023,8 @@ router.patch("/:id/checklist/:itemId/done", async (req, res) => {
         title: task.title,
       },
       checklistItem: formatChecklistItem(item),
+      progress,
+      closingQuestion: buildChecklistClosingQuestion(progress),
     });
   } catch (error) {
     return res.status(500).json({
