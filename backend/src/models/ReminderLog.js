@@ -30,6 +30,7 @@ const reminderLogSchema = new mongoose.Schema(
                 "overdue_evening",
                 "missing_details_6h",
                 "priority_attention_6h",
+                "weekly_plan",
             ],
             index: true,
         },

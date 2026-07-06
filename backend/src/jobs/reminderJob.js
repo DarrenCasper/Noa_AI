@@ -6,6 +6,7 @@ const timezone = require("dayjs/plugin/timezone");
 const Task = require("../models/Task");
 const ReminderLog = require("../models/ReminderLog");
 const { sendWhatsAppMessage } = require("../services/whatsappService");
+const { generateWeeklyPlan } = require("../services/weeklyPlanService");
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -47,6 +48,10 @@ const PRIORITY_CHECK_MINUTE = Number(process.env.PRIORITY_CHECK_MINUTE || 0);
 
 const OVERDUE_NOON_HOUR = Number(process.env.OVERDUE_NOON_HOUR || 12);
 const OVERDUE_EVENING_HOUR = Number(process.env.OVERDUE_EVENING_HOUR || 18);
+
+const WEEKLY_PLAN_DAY = Number(process.env.WEEKLY_PLAN_DAY ?? 1); // 0=Sunday..6=Saturday, default Monday
+const WEEKLY_PLAN_HOUR = Number(process.env.WEEKLY_PLAN_HOUR || 6);
+const WEEKLY_PLAN_MINUTE = Number(process.env.WEEKLY_PLAN_MINUTE || 30);
 
 function getDateKey(now = dayjs().tz(APP_TZ)) {
   return now.tz(APP_TZ).format("YYYY-MM-DD");
@@ -899,6 +904,62 @@ function shouldRunAtAnyHour(now, hours, minute) {
   return hours.includes(now.hour()) && now.minute() === minute;
 }
 
+function shouldRunOnDayAt(now, day, hour, minute) {
+  return now.day() === day && now.hour() === hour && now.minute() === minute;
+}
+
+function formatWeeklyPlanMessage(weeklyPlan) {
+  const lines = [
+    "Good morning, Sensei. Here's your weekly plan:",
+    "",
+    `Overview: ${weeklyPlan.counts.overdue} overdue, ${weeklyPlan.counts.dueThisWeek} due this week, ${weeklyPlan.counts.highChecklistRisk} at checklist risk, ${weeklyPlan.counts.missingDetails} missing details.`,
+    "",
+  ];
+
+  if (weeklyPlan.topPriorities.length > 0) {
+    lines.push("Top priorities:");
+
+    weeklyPlan.topPriorities.slice(0, 5).forEach((task, index) => {
+      const reasons = (task.weeklyPriority?.reasons || []).slice(0, 3).join(", ");
+
+      lines.push(`${index + 1}. ${task.title}`);
+      lines.push(`   Due: ${task.dueText}`);
+
+      if (task.checklist?.hasChecklist) {
+        lines.push(
+          `   Checklist: ${task.checklist.done}/${task.checklist.total} done (${task.checklist.percentage}%)`
+        );
+      }
+
+      lines.push(`   Why: ${reasons || "worth reviewing"}`);
+      lines.push("");
+    });
+  } else {
+    lines.push("No active tasks need attention this week.", "");
+  }
+
+  lines.push(`Recommendation: ${weeklyPlan.recommendation}`, "", weeklyPlan.closingQuestion);
+
+  return lines.join("\n");
+}
+
+async function sendWeeklyPlanReminder() {
+  const now = dayjs().tz(APP_TZ);
+  const userId = DEFAULT_USER_ID;
+  const type = "weekly_plan";
+  const dateKey = getDateKey(now);
+
+  const weeklyPlan = await generateWeeklyPlan({ userId, days: 7 });
+  const message = formatWeeklyPlanMessage(weeklyPlan);
+
+  await sendLoggedReminder({
+    userId,
+    type,
+    dateKey,
+    message,
+  });
+}
+
 function startReminderJob() {
   console.log("Reminder job started.");
 
@@ -918,6 +979,12 @@ function startReminderJob() {
   console.log(`Priority check hours: ${PRIORITY_CHECK_HOURS.join(", ")}`);
   console.log("Urgent deadline reminders enabled: 3h and 1h before.");
   console.log("Checklist-aware reminder intelligence enabled.");
+
+  console.log(
+    `Weekly plan day/time: day ${WEEKLY_PLAN_DAY} (0=Sun) at ${WEEKLY_PLAN_HOUR}:${String(
+      WEEKLY_PLAN_MINUTE
+    ).padStart(2, "0")} ${APP_TZ}`
+  );
 
   cron.schedule("* * * * *", async () => {
     try {
@@ -947,6 +1014,10 @@ function startReminderJob() {
         await sendGroupedOverdueReminder("overdue_evening");
       }
 
+      if (shouldRunOnDayAt(now, WEEKLY_PLAN_DAY, WEEKLY_PLAN_HOUR, WEEKLY_PLAN_MINUTE)) {
+        await sendWeeklyPlanReminder();
+      }
+
       await sendDeadlineHourReminders();
     } catch (error) {
       console.error("Reminder job error:", error.message);
@@ -962,4 +1033,5 @@ module.exports = {
   sendMissingDetailsReminder,
   sendPriorityAttentionReminder,
   sendGroupedOverdueReminder,
+  sendWeeklyPlanReminder,
 };

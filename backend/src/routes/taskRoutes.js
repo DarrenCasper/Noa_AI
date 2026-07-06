@@ -3,6 +3,7 @@ const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc");
 const timezone = require("dayjs/plugin/timezone");
 const Task = require("../models/Task");
+const { generateWeeklyPlan } = require("../services/weeklyPlanService");
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -1115,6 +1116,30 @@ router.delete("/:id/checklist/:itemId", async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       message: "Failed to delete checklist item.",
+      error: error.message,
+    });
+  }
+});
+
+router.get("/weekly-plan", async (req, res) => {
+  try {
+    const userId = requireUserIdFromQuery(req, res);
+    if (!userId) return;
+
+    const days = Math.min(Number(req.query.days || 7), 14);
+
+    const weeklyPlan = await generateWeeklyPlan({
+      userId,
+      days,
+    });
+
+    return res.json({
+      message: "Weekly plan generated.",
+      ...weeklyPlan,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Failed to generate weekly plan.",
       error: error.message,
     });
   }
