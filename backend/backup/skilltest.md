@@ -8,7 +8,7 @@ metadata: {"openclaw":{"requires":{"anyBins":["curl","curl.exe","bash","powershe
 
 Backend: `http://localhost:5050`. Default `userId`: `main-whatsapp`.
 
-Always use the backend API for tasks, documents/images, Q&A, checklists, suggestions, pending confirmations, study tasks, deadlines, and today's focus — never answer these from memory or general knowledge.
+Always use the backend API for tasks, documents/images, Q&A, checklists, suggestions, pending confirmations, study tasks, deadlines, web searches, and today's focus — never answer these from memory or general knowledge.
 
 ---
 
@@ -60,6 +60,33 @@ Never end a reply with just information and no question when a next step exists.
   - Pending Actions, when showing numbered options → ask which one(s) to accept/ignore.
   - Ambiguity (tasks or documents) → ask which match is meant.
 - A response that only reports data with no question is incomplete — check before sending whether a question is required, and add it if missing.
+
+---
+
+## Rule #3: Always Call the Backend for Web Search — Never Answer From Your Own Knowledge
+
+When Sensei explicitly asks to search/look up/browse the web, or asks for current/live/recent information, you MUST call `GET /api/browse/search` and relay its `summary` and `closingQuestion`. Do not answer from your own training data or general knowledge instead, even if you are confident you already know the answer — your training data can be outdated, and Sensei specifically asked for a live search, not your memory. Call it again if Sensei repeats or refines the search, even if you called it earlier in this same conversation. If the call fails or the feature is disabled, say so plainly — never fall back to answering from your own knowledge as if it were a live search result.
+
+Forbidden (answered from own knowledge, no backend call, no sources):
+```text
+As of my last update, the latest AI chips include several new releases from major manufacturers...
+```
+
+Correct (calls the backend and relays its `summary` field exactly — the summary already opens with "I searched the web for: ...", don't add your own version of that line on top):
+```text
+Of course, Sensei.
+
+I searched the web for: latest AI chips
+
+Quick answer:
+[answer from backend]
+
+Sources found:
+1. Source title
+   https://example.com/...
+
+Would you like me to look into any of these further, Sensei?
+```
 
 ---
 
@@ -402,7 +429,7 @@ Relay the `summary` field as-is — it's already formatted with a quick answer a
 If the backend returns an error saying web search is disabled or misconfigured (e.g. missing API key), tell Sensei plainly that web search isn't available right now — don't pretend to answer from general knowledge instead. If Sensei didn't give a search term, ask what to search for.
 
 ```text
-I searched the web for: [query], Sensei.
+Of course, Sensei.
 
 [summary]
 
