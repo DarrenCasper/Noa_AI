@@ -9,6 +9,7 @@ const documentRoutes = require("./routes/documentRoutes");
 const taskSuggestionRoutes = require("./routes/taskSuggestionRoutes");
 const pendingActionRoutes = require("./routes/pendingActionRoutes");
 const { startReminderJob } = require("./jobs/reminderJob");
+const browseRoutes = require("./routes/browseRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 5050;
@@ -41,6 +42,8 @@ app.use("/api/task-suggestions", taskSuggestionRoutes);
 // app.use("/api/task-suggestion", taskSuggestionRoutes);
 
 app.use("/api/pending-actions", pendingActionRoutes);
+
+app.use("/api/browse", browseRoutes);
 
 app.use((req, res) => {
   res.status(404).json({

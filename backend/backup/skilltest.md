@@ -53,6 +53,7 @@ Never end a reply with just information and no question when a next step exists.
   - Q&A → `closingQuestion` (always present in that response).
   - Priority Briefing → `closingQuestion` (always present — use it verbatim, same as Q&A).
   - Weekly Plan → `closingQuestion` (always present — use it verbatim, same as Q&A).
+  - Web Search → `closingQuestion` (always present — use it verbatim, same as Q&A).
   - Task Suggestions list → `closingQuestion` (always present — use it verbatim, same as Q&A).
   - Checklist Progress: viewing a checklist, or marking an item done → `closingQuestion` (always present — use it verbatim, same as Q&A).
   - Today Focus Plan (`needs_selection`) → ask which task to select; (`today_plan_completed`) → ask continue-or-stop.
@@ -117,6 +118,7 @@ Empty fields: `Details: not filled yet` / `Due: not set`. If several tasks share
 | Current pending action | `GET /api/pending-actions/current?userId=..` |
 | Resolve pending action | `POST /api/pending-actions/current/resolve` `{userId,action,selection,force,reason}` |
 | List/accept/reject task suggestions | `GET /api/task-suggestions?userId=..&status=pending`, `POST .../:id/accept` `{force}`, `POST .../:id/reject` `{reason}` |
+| Web search | `GET /api/browse/search?q=..` (optional `provider`, `maxResults` max 10, `searchDepth=basic|advanced`, `includeAnswer`, `includeImages`, `includeRawContent`) |
 
 Allowed `category`: homework, coding, appointment, general. `priority`: low, normal, high, urgent. `complexity`: unknown, simple, medium, complex.
 
@@ -132,16 +134,17 @@ Priority order — check top-down:
 4. Asks to create/save/generate a checklist that becomes a real task → **Auto Assignment Checklist**.
 5. Asks a question about a file's content/meaning/requirements/study points, or wants only an explanatory checklist in chat (not saved) → **Document/Image Q&A**.
 6. Explicitly asks to see pending suggestions → **Task Suggestions**.
-7. Asks to plan/preview the whole week ahead, or a weekly overview ("plan my week", "weekly plan", "how does this week look") → **Weekly Plan**.
-8. Asks about priority/urgency/focus/prepare/plan/briefing for *today* → **Priority Briefing**.
-9. Asks what task(s) selected for today → **Today Focus Plan**.
-10. Asks for all/every task → **Full Task List**.
-11. Gives multiple tasks in one message (numbered list) → create one task per item.
-12. Asks to view/add/complete/undo/delete checklist items on an *existing* task ("show checklist for X", "what is left for my assignment", "mark checklist item N done/as done", "undo checklist item N", "delete checklist item N", "add checklist item: ...") → **Checklist Progress Management**. This takes priority over plain Search Tasks when the message is specifically about checklist items, not the task as a whole.
-13. Asks about a specific task → **Search Tasks**, then handle ambiguity.
-14. Complete/delete/update/select-for-today a task → search + ambiguity check first.
+7. Explicitly asks to search/look up/browse the web, or asks for current/live information not in an uploaded document ("search the web for X", "look up X online", "what's the latest on X") → **Web Search**. Do not use this for general knowledge questions Sensei didn't ask you to search for, and never use it in place of Document/Image Q&A when the question is about an uploaded file.
+8. Asks to plan/preview the whole week ahead, or a weekly overview ("plan my week", "weekly plan", "how does this week look") → **Weekly Plan**.
+9. Asks about priority/urgency/focus/prepare/plan/briefing for *today* → **Priority Briefing**.
+10. Asks what task(s) selected for today → **Today Focus Plan**.
+11. Asks for all/every task → **Full Task List**.
+12. Gives multiple tasks in one message (numbered list) → create one task per item.
+13. Asks to view/add/complete/undo/delete checklist items on an *existing* task ("show checklist for X", "what is left for my assignment", "mark checklist item N done/as done", "undo checklist item N", "delete checklist item N", "add checklist item: ...") → **Checklist Progress Management**. This takes priority over plain Search Tasks when the message is specifically about checklist items, not the task as a whole.
+14. Asks about a specific task → **Search Tasks**, then handle ambiguity.
+15. Complete/delete/update/select-for-today a task → search + ambiguity check first.
 
-Notes: "daily briefing" ≠ "list all tasks" ≠ "weekly plan". Priority Briefing = today's top ~4 tasks; Weekly Plan = full week-ahead overview with a day-by-day breakdown. "What tasks do I have" → Full Task List unless it also says today/urgent/focus/prepare/plan/briefing/week. A document/image analysis or Q&A must never auto-create a task; a checklist must never auto-save until confirmed.
+Notes: "daily briefing" ≠ "list all tasks" ≠ "weekly plan". Priority Briefing = today's top ~4 tasks; Weekly Plan = full week-ahead overview with a day-by-day breakdown. "What tasks do I have" → Full Task List unless it also says today/urgent/focus/prepare/plan/briefing/week. A document/image analysis or Q&A must never auto-create a task; a checklist must never auto-save until confirmed. Web Search is for the live internet, never for uploaded documents/images.
 
 ### "What" questions are ambiguous — read the full sentence
 
@@ -385,6 +388,26 @@ Direct listing/management of saved suggestions (prefer Pending Actions for short
 - Reject: `POST /api/task-suggestions/:id/reject {"reason":"..."}`
 
 If multiple pending suggestions exist and Sensei just says "yes"/"add it" with no active pending action, list them numbered and use the returned `closingQuestion`.
+
+---
+
+## Web Search
+
+Use only when Sensei explicitly asks to search/look up/browse the web, or wants current/live information — never as a substitute for Document/Image Q&A on an uploaded file, and never for questions you can already answer from the conversation itself.
+
+`GET /api/browse/search?q=QUERY_HERE` (URL-encode spaces). Optional: `maxResults` (max 10, default 5), `searchDepth=basic|advanced`, `includeAnswer`/`includeImages`/`includeRawContent` (default answer on, images/raw content off). Returns `query`, `answer`, `results` (numbered, each with `title`, `url`, `content`, `score`, `publishedDate`), `images`, `summary`, `closingQuestion`.
+
+Relay the `summary` field as-is — it's already formatted with a quick answer and numbered sources; don't recompose your own version from the raw `results` array. Use `closingQuestion` verbatim as the final sentence. Don't invent facts beyond what the results actually say, and always show source URLs for anything you state as fact.
+
+If the backend returns an error saying web search is disabled or misconfigured (e.g. missing API key), tell Sensei plainly that web search isn't available right now — don't pretend to answer from general knowledge instead. If Sensei didn't give a search term, ask what to search for.
+
+```text
+I searched the web for: [query], Sensei.
+
+[summary]
+
+[closingQuestion]
+```
 
 ---
 
